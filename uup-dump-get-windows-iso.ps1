@@ -15,18 +15,25 @@ trap {
 }
 
 $TARGETS = @{
-    # see https://en.wikipedia.org/wiki/Windows_11
-    # see https://en.wikipedia.org/wiki/Windows_11_version_history
     "windows-11" = @{
-        search = "windows 11 22631 amd64" # aka 23H2. Enterprise EOL: November 10, 2026.
+        search = "windows 11 22631 amd64" 
         edition = "Professional"
         virtualEdition = "Enterprise"
     }
-    # see https://en.wikipedia.org/wiki/Windows_Server_2022
-    "windows-2022" = @{
-        search = "feature update server operating system 20348 amd64" # aka 21H2. Mainstream EOL: October 13, 2026.
-        edition = "ServerStandard"
+    "windows-10-ui" = @{
+        search = "windows 10 21H2 19044.1288 amd64"
+        edition = "Windows 10 UI"
         virtualEdition = $null
+    }
+    "windows-11-uup1" = @{
+        search = "windows 11 22509 amd64"
+        edition = "Professional"
+        virtualEdition = "Enterprise"
+    }
+    "windows-11-uup2" = @{
+        search = "windows 11 22499 amd64"
+        edition = "Professional"
+        virtualEdition = "Enterprise"
     }
 }
 
@@ -37,7 +44,6 @@ function New-QueryString([hashtable]$parameters) {
 }
 
 function Invoke-UupDumpApi([string]$name, [hashtable]$body) {
-    # see https://git.uupdump.net/uup-dump/json-api
     for ($n = 0; $n -lt 15; ++$n) {
         if ($n) {
             Write-Host "Waiting a bit before retrying the uup-dump api ${name} request #$n"
@@ -71,7 +77,6 @@ function Get-UupDumpIso($name, $target) {
             $_
         } `
         | Where-Object {
-            # ignore previews when they are not explicitly requested.
             $result = $target.search -like '*preview*' -or $_.Value.title -notlike '*preview*'
             if (!$result) {
                 Write-Host "Skipping. Expected preview=false. Got preview=true."
@@ -79,23 +84,6 @@ function Get-UupDumpIso($name, $target) {
             $result
         } `
         | ForEach-Object {
-            # get more information about the build. eg:
-            #   "langs": {
-            #     "en-us": "English (United States)",
-            #     "pt-pt": "Portuguese (Portugal)",
-            #     ...
-            #   },
-            #   "info": {
-            #     "title": "Feature update to Microsoft server operating system, version 21H2 (20348.643)",
-            #     "ring": "RETAIL",
-            #     "flight": "Active",
-            #     "arch": "amd64",
-            #     "build": "20348.643",
-            #     "checkBuild": "10.0.20348.1",
-            #     "sku": 8,
-            #     "created": 1649783041,
-            #     "sha256ready": true
-            #   }
             $id = $_.Value.uuid
             Write-Host "Getting the $name $id langs metadata"
             $result = Invoke-UupDumpApi listlangs @{
@@ -126,10 +114,6 @@ function Get-UupDumpIso($name, $target) {
             $_
         } `
         | Where-Object {
-            # only return builds that:
-            #   1. are from the retail channel
-            #   2. have the english language
-            #   3. match the requested edition
             $ring = $_.Value.info.ring
             $langs = $_.Value.langs.PSObject.Properties.Name
             $editions = $_.Value.editions.PSObject.Properties.Name
@@ -162,18 +146,12 @@ function Get-UupDumpIso($name, $target) {
                     id = $id
                     lang = 'en-us'
                     edition = $target.edition
-                    #noLinks = '1' # do not return the files download urls.
                 })
                 downloadUrl = 'https://uupdump.net/download.php?' + (New-QueryString @{
                     id = $id
                     pack = 'en-us'
                     edition = $target.edition
                 })
-                # NB you must use the HTTP POST method to invoke this packageUrl
-                #    AND in the body you must include:
-                #           autodl=2 updates=1 cleanup=1
-                #           OR
-                #           autodl=3 updates=1 cleanup=1 virtualEditions[]=Enterprise
                 downloadPackageUrl = 'https://uupdump.net/get.php?' + (New-QueryString @{
                     id = $id
                     pack = 'en-us'
@@ -212,7 +190,6 @@ function Get-IsoWindowsImages($isoPath) {
 function Get-WindowsIso($name, $destinationDirectory) {
     $iso = Get-UupDumpIso $name $TARGETS.$name
 
-    # ensure the build is a version number.
     if ($iso.build -notmatch '^\d+\.\d+$') {
         throw "unexpected $name build: $($iso.build)"
     }
@@ -222,13 +199,11 @@ function Get-WindowsIso($name, $destinationDirectory) {
     $destinationIsoMetadataPath = "$destinationIsoPath.json"
     $destinationIsoChecksumPath = "$destinationIsoPath.sha256.txt"
 
-    # create the build directory.
     if (Test-Path $buildDirectory) {
         Remove-Item -Force -Recurse $buildDirectory | Out-Null
     }
     New-Item -ItemType Directory -Force $buildDirectory | Out-Null
 
-    # define the iso title.
     $edition = if ($iso.virtualEdition) {
         $iso.virtualEdition
     } else {
@@ -259,9 +234,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
         | Out-Null
     Expand-Archive "$buildDirectory.zip" $buildDirectory
 
-    # patch the uup-converter configuration.
-    # see the ConvertConfig $buildDirectory/ReadMe.html documentation.
-    # see https://github.com/abbodi1406/BatUtil/tree/master/uup-converter-wimlib
     $convertConfig = (Get-Content $buildDirectory/ConvertConfig.ini) `
         -replace '^(AutoExit\s*)=.*','$1=1' `
         -replace '^(ResetBase\s*)=.*','$1=1' `
@@ -279,12 +251,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
 
     Write-Host "Creating the $title iso file inside the $buildDirectory directory"
     Push-Location $buildDirectory
-    # NB we have to use powershell cmd to workaround:
-    #       https://github.com/PowerShell/PowerShell/issues/6850
-    #       https://github.com/PowerShell/PowerShell/pull/11057
-    # NB we have to use | Out-String to ensure that this powershell instance
-    #    waits until all the processes that are started by the .cmd are
-    #    finished.
     powershell cmd /c uup_download_windows.cmd | Out-String -Stream
     if ($LASTEXITCODE) {
         throw "uup_download_windows.cmd failed with exit code $LASTEXITCODE"
@@ -301,7 +267,6 @@ function Get-WindowsIso($name, $destinationDirectory) {
 
     $windowsImages = Get-IsoWindowsImages $sourceIsoPath
 
-    # create the iso metadata file.
     Set-Content `
         -Path $destinationIsoMetadataPath `
         -Value (
