@@ -10,7 +10,6 @@ jobs:
       matrix:
         include:
           - name: windows-11
-          - name: windows-2022
     runs-on: windows-2022
     steps:
       - name: Checkout
