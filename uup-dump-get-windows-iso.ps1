@@ -286,9 +286,7 @@ function Get-WindowsIso($name, $destinationDirectory) {
     Write-Host 'All Done.'
 }
 
-$windows10TargetName = "Windows10"
-$windows11UITargetName = "Windows11UI"
+$windowsTargetName = "Windows10"
 $destinationDirectory = "C:\ISOs"
 
-Get-WindowsIso $windows10TargetName $destinationDirectory
-Get-WindowsIso $windows11UITargetName $destinationDirectory
+Get-WindowsIso $windowsTargetName $destinationDirectory
