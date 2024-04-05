@@ -28,6 +28,12 @@ $TARGETS = @{
         edition = "ServerStandard"
         virtualEdition = $null
     }
+    # new edition "mros"
+    "mros" = @{
+        search = "feature update windows 11 mros 22631 amd64"
+        edition = "MROS"
+        virtualEdition = $null
+    }
 }
 
 function New-QueryString([hashtable]$parameters) {
